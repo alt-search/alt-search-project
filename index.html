@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Alt Search (Prototype)</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- MiniSearch (client-side search) -->
+  <script src="https://unpkg.com/minisearch@6.3.0/dist/umd/index.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <h1>Alt Search (Prototype)</h1>
+
+    <div class="searchbar">
+      <input id="q" type="search" placeholder='Search (try: "Corbett")' autocomplete="off" />
+      <button id="btn">Search</button>
+    </div>
+
+    <div class="help">
+      Advanced queries (prototype): use quotes for exact phrases, e.g. <code>"new world"</code>.
+    </div>
+
+    <div id="meta" class="meta"></div>
+    <ol id="results" class="results"></ol>
+
+    <footer class="footer">
+      <a href="#" id="aboutLink">About</a>
+      <span class="sep">·</span>
+      <a href="https://paypal.me/YOURNAME" target="_blank" rel="noopener">If you want to support (PayPal)</a>
+    </footer>
+
+    <dialog id="aboutDialog">
+      <h3>About</h3>
+      <p>
+        This site indexes publicly available links (titles + URLs) from selected sources.
+        It does not host or modify external content.
+      </p>
+      <button id="closeAbout">Close</button>
+    </dialog>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
