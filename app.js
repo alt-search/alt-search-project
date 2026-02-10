@@ -20,6 +20,10 @@ const MAX_PER_SOURCE_TOP = 2;
 // HELPERS
 // ----------------------
 
+function debugLog(...args) {
+  console.log("[DEBUG]", ...args);
+}
+
 function normalizeQuery(q) {
   return q.trim();
 }
@@ -70,9 +74,7 @@ function parseQuery(raw) {
 
   // source:"Name"
   const sourceMatch = q.match(/source:"([^"]+)"/i);
-  const sourceFilter = sourceMatch
-    ? normalizeSource(sourceMatch[1])
-    : null;
+  const sourceFilter = sourceMatch ? normalizeSource(sourceMatch[1]) : null;
   q = q.replace(/source:"[^"]+"/i, " ");
 
   // after / before dates
@@ -116,20 +118,39 @@ function passesAdvancedFilters(item, filters) {
 
   const haystack = `${item.title} ${item.summary}`.toLowerCase();
 
-  if (excludeTerms.some(t => haystack.includes(t))) return false;
-
-  if (siteFilter && !item.url.toLowerCase().includes(siteFilter)) return false;
-
-  if (
-    sourceFilter &&
-    !normalizeSource(item.source).includes(sourceFilter)
-  ) {
+  if (excludeTerms.some(t => haystack.includes(t))) {
+    debugLog("REJECT excludeTerms:", { title: item.title });
     return false;
   }
 
-  if (afterDate && item.date < afterDate) return false;
+  if (siteFilter && !item.url.toLowerCase().includes(siteFilter)) {
+    debugLog("REJECT siteFilter:", { url: item.url, siteFilter });
+    return false;
+  }
 
-  if (beforeDate && item.date > beforeDate) return false;
+  if (sourceFilter) {
+    const normItemSource = normalizeSource(item.source);
+    debugLog("CHECK sourceFilter:", {
+      itemSource: item.source,
+      normItemSource,
+      sourceFilter
+    });
+
+    if (!normItemSource.includes(sourceFilter)) {
+      debugLog("REJECT sourceFilter:", { itemSource: item.source, sourceFilter });
+      return false;
+    }
+  }
+
+  if (afterDate && item.date < afterDate) {
+    debugLog("REJECT afterDate:", { date: item.date, afterDate });
+    return false;
+  }
+
+  if (beforeDate && item.date > beforeDate) {
+    debugLog("REJECT beforeDate:", { date: item.date, beforeDate });
+    return false;
+  }
 
   return true;
 }
@@ -226,7 +247,20 @@ async function init() {
     if (!raw) return renderResults([], "");
 
     const filters = parseQuery(raw);
+
+    debugLog("RAW QUERY:", raw);
+    debugLog("PARSED FILTERS:", filters);
+
     let results = miniSearch.search(filters.terms.join(" "));
+
+    debugLog(
+      "MiniSearch results (first 10):",
+      results.slice(0, 10).map(r => ({
+        id: r.id,
+        score: r.score,
+        source: indexById[r.id]?.source
+      }))
+    );
 
     // Phrase boost
     if (filters.phraseMatches.length) {
@@ -258,6 +292,8 @@ async function init() {
       })
       .filter(Boolean)
       .sort((a, b) => b.finalScore - a.finalScore);
+
+    debugLog("FINAL RESULT SOURCES (top 10):", reranked.slice(0, 10).map(x => x.item.source));
 
     const finalResults = applySourceQuota(reranked);
     renderResults(finalResults, raw);
