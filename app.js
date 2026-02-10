@@ -24,6 +24,15 @@ function normalizeQuery(q) {
   return q.trim();
 }
 
+function normalizeSource(s) {
+  return (s || "")
+    .toLowerCase()
+    .replace(/rss|feeds?|news/gi, "")
+    .replace(/\(.*?\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function daysOld(dateStr) {
   const msPerDay = 1000 * 60 * 60 * 24;
   const then = new Date(dateStr).getTime();
@@ -61,7 +70,9 @@ function parseQuery(raw) {
 
   // source:"Name"
   const sourceMatch = q.match(/source:"([^"]+)"/i);
-  const sourceFilter = sourceMatch ? sourceMatch[1].toLowerCase() : null;
+  const sourceFilter = sourceMatch
+    ? normalizeSource(sourceMatch[1])
+    : null;
   q = q.replace(/source:"[^"]+"/i, " ");
 
   // after / before dates
@@ -109,7 +120,12 @@ function passesAdvancedFilters(item, filters) {
 
   if (siteFilter && !item.url.toLowerCase().includes(siteFilter)) return false;
 
-  if (sourceFilter && !item.source.toLowerCase().includes(sourceFilter)) return false;
+  if (
+    sourceFilter &&
+    !normalizeSource(item.source).includes(sourceFilter)
+  ) {
+    return false;
+  }
 
   if (afterDate && item.date < afterDate) return false;
 
@@ -210,7 +226,6 @@ async function init() {
     if (!raw) return renderResults([], "");
 
     const filters = parseQuery(raw);
-
     let results = miniSearch.search(filters.terms.join(" "));
 
     // Phrase boost
@@ -227,7 +242,6 @@ async function init() {
       });
     }
 
-    // Ranking
     const reranked = results
       .map(r => {
         const item = indexById[r.id];
