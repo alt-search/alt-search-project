@@ -36,22 +36,92 @@ function freshnessBoost(dateStr) {
   return 1 + 0.6 * Math.exp(-age / 14);
 }
 
-// Basic “advanced search” support
+// ----------------------
+// ADVANCED QUERY PARSING
+// ----------------------
+
 function parseQuery(raw) {
-  const q = raw.trim();
+  let q = raw.trim();
+
+  // Quoted phrases
   const phraseMatches = [...q.matchAll(/"([^"]+)"/g)]
     .map(m => m[1].trim())
     .filter(Boolean);
 
-  const remaining = q.replace(/"[^"]+"/g, " ")
+  q = q.replace(/"[^"]+"/g, " ");
+
+  // Excluded terms (-word)
+  const excludeTerms = [...q.matchAll(/-(\w+)/g)].map(m => m[1].toLowerCase());
+  q = q.replace(/-\w+/g, " ");
+
+  // site:domain.com
+  const siteMatch = q.match(/site:([^\s]+)/i);
+  const siteFilter = siteMatch ? siteMatch[1].toLowerCase() : null;
+  q = q.replace(/site:[^\s]+/i, " ");
+
+  // source:"Name"
+  const sourceMatch = q.match(/source:"([^"]+)"/i);
+  const sourceFilter = sourceMatch ? sourceMatch[1].toLowerCase() : null;
+  q = q.replace(/source:"[^"]+"/i, " ");
+
+  // after / before dates
+  const afterMatch = q.match(/after:(\d{4}-\d{2}-\d{2})/);
+  const beforeMatch = q.match(/before:(\d{4}-\d{2}-\d{2})/);
+
+  const afterDate = afterMatch ? afterMatch[1] : null;
+  const beforeDate = beforeMatch ? beforeMatch[1] : null;
+
+  q = q
+    .replace(/after:\d{4}-\d{2}-\d{2}/g, " ")
+    .replace(/before:\d{4}-\d{2}-\d{2}/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  const terms = remaining ? remaining.split(" ") : [];
-  return { phraseMatches, terms };
+  const terms = q ? q.split(" ") : [];
+
+  return {
+    terms,
+    phraseMatches,
+    excludeTerms,
+    siteFilter,
+    sourceFilter,
+    afterDate,
+    beforeDate
+  };
 }
 
-// Apply per-source quota to top results
+// ----------------------
+// FILTERING
+// ----------------------
+
+function passesAdvancedFilters(item, filters) {
+  const {
+    excludeTerms,
+    siteFilter,
+    sourceFilter,
+    afterDate,
+    beforeDate
+  } = filters;
+
+  const haystack = `${item.title} ${item.summary}`.toLowerCase();
+
+  if (excludeTerms.some(t => haystack.includes(t))) return false;
+
+  if (siteFilter && !item.url.toLowerCase().includes(siteFilter)) return false;
+
+  if (sourceFilter && !item.source.toLowerCase().includes(sourceFilter)) return false;
+
+  if (afterDate && item.date < afterDate) return false;
+
+  if (beforeDate && item.date > beforeDate) return false;
+
+  return true;
+}
+
+// ----------------------
+// SOURCE DIVERSITY
+// ----------------------
+
 function applySourceQuota(results) {
   const counts = {};
   const out = [];
@@ -139,13 +209,13 @@ async function init() {
     const raw = normalizeQuery(input.value);
     if (!raw) return renderResults([], "");
 
-    const { phraseMatches, terms } = parseQuery(raw);
+    const filters = parseQuery(raw);
 
-    let results = miniSearch.search(terms.join(" "));
+    let results = miniSearch.search(filters.terms.join(" "));
 
-    // Phrase boost (title contains quoted phrases)
-    if (phraseMatches.length) {
-      const phraseSet = phraseMatches.map(p => p.toLowerCase());
+    // Phrase boost
+    if (filters.phraseMatches.length) {
+      const phraseSet = filters.phraseMatches.map(p => p.toLowerCase());
       results = results.map(r => {
         const d = indexById[r.id];
         const title = (d?.title || "").toLowerCase();
@@ -157,20 +227,23 @@ async function init() {
       });
     }
 
-    // Final scoring: relevance × freshness × tier
-    const reranked = results.map(r => {
-      const item = indexById[r.id];
-      const freshness = freshnessBoost(item.date);
-      const tierWeight = TIER_WEIGHT[item.tier] || 1.0;
+    // Ranking
+    const reranked = results
+      .map(r => {
+        const item = indexById[r.id];
+        if (!passesAdvancedFilters(item, filters)) return null;
 
-      return {
-        ...r,
-        item,
-        finalScore: r.score * freshness * tierWeight
-      };
-    });
+        const freshness = freshnessBoost(item.date);
+        const tierWeight = TIER_WEIGHT[item.tier] || 1.0;
 
-    reranked.sort((a, b) => b.finalScore - a.finalScore);
+        return {
+          ...r,
+          item,
+          finalScore: r.score * freshness * tierWeight
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.finalScore - a.finalScore);
 
     const finalResults = applySourceQuota(reranked);
     renderResults(finalResults, raw);
